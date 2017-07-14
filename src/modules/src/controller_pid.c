@@ -16,7 +16,7 @@ static bool tiltCompensationEnabled = false;
 static attitude_t attitudeDesired;
 static attitude_t rateDesired;
 static float actuatorThrust;
-
+static float ManualThrust = 0;
 void stateControllerInit(void)
 {
   attitudeControllerInit(ATTITUDE_UPDATE_DT);
@@ -91,13 +91,21 @@ void stateController(control_t *control, setpoint_t *setpoint,
     control->yaw = -control->yaw;
   }
 
-  if (tiltCompensationEnabled)
+  if (tiltCompensationEnabled)//not enabled (see line 14)
   {
     control->thrust = actuatorThrust / sensfusion6GetInvThrustCompensationForTilt();
   }
   else
   {
+	  if (actuatorThrust > 0)
+	  {
     control->thrust = actuatorThrust;
+	  }
+	  else
+	  {
+		  control->thrust = ManualThrust;//my condition for when no thrust input comes from the joystick
+	  }
+
   }
 
   if (control->thrust == 0)
@@ -128,4 +136,5 @@ LOG_GROUP_STOP(controller)
 
 PARAM_GROUP_START(controller)
 PARAM_ADD(PARAM_UINT8, tiltComp, &tiltCompensationEnabled)
+PARAM_ADD(PARAM_FLOAT, BaseThrust, &ManualThrust)
 PARAM_GROUP_STOP(controller)

@@ -159,6 +159,9 @@ void stabilizerSetEmergencyStopTimeout(int timeout)
   emergencyStop = false;
   emergencyStopTimeout = timeout;
 }
+PARAM_GROUP_START(ThrustLevelSet)/*added by Fran*/
+PARAM_ADD(PARAM_FLOAT, basethrust, &control.thrust)
+PARAM_GROUP_STOP(ThrustLevelSet)
 
 LOG_GROUP_START(ctrltarget)
 LOG_ADD(LOG_FLOAT, roll, &setpoint.attitude.roll)
