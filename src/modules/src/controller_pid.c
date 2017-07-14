@@ -91,7 +91,7 @@ void stateController(control_t *control, setpoint_t *setpoint,
     control->yaw = -control->yaw;
   }
 
-  if (tiltCompensationEnabled)
+  if (tiltCompensationEnabled)//not enabled (see line 14)
   {
     control->thrust = actuatorThrust / sensfusion6GetInvThrustCompensationForTilt();
   }
