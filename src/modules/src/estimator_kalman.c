@@ -355,6 +355,8 @@ void estimatorKalman(state_t *state, sensorData_t *sensors, control_t *control, 
   // Tracks whether an update to the state has been made, and the state therefore requires finalization
   bool doneUpdate = false;
 
+  uint32_t osTick = xTaskGetTickCount(); // would be nice if this had a precision higher than 1ms...
+
 #ifdef KALMAN_DECOUPLE_XY
   // Decouple position states
   decoupleState(STATE_X);
@@ -389,7 +391,7 @@ void estimatorKalman(state_t *state, sensorData_t *sensors, control_t *control, 
   thrustAccumulatorCount++;
 
   // Run the system dynamics to predict the state forward.
-  if ((tick-lastPrediction) >= configTICK_RATE_HZ/PREDICT_RATE // update at the PREDICT_RATE
+  if ((osTick-lastPrediction) >= configTICK_RATE_HZ/PREDICT_RATE // update at the PREDICT_RATE
       && gyroAccumulatorCount > 0
       && accAccumulatorCount > 0
       && thrustAccumulatorCount > 0)
@@ -404,14 +406,14 @@ void estimatorKalman(state_t *state, sensorData_t *sensors, control_t *control, 
 
     thrustAccumulator /= thrustAccumulatorCount;
 
-    float dt = (float)(tick-lastPrediction)/configTICK_RATE_HZ;
+    float dt = (float)(osTick-lastPrediction)/configTICK_RATE_HZ;
     stateEstimatorPredict(thrustAccumulator, &accAccumulator, &gyroAccumulator, dt);
 
     if (!quadIsFlying) { // accelerometers give us information about attitude on slanted ground
       stateEstimatorUpdateWithAccOnGround(&accAccumulator);
     }
 
-    lastPrediction = tick;
+    lastPrediction = osTick;
 
     accAccumulator = (Axis3f){.axis={0}};
     accAccumulatorCount = 0;
@@ -427,8 +429,8 @@ void estimatorKalman(state_t *state, sensorData_t *sensors, control_t *control, 
   /**
    * Add process noise every loop, rather than every prediction
    */
-  stateEstimatorAddProcessNoise((float)(tick-lastPNUpdate)/configTICK_RATE_HZ);
-  lastPNUpdate = tick;
+  stateEstimatorAddProcessNoise((float)(osTick-lastPNUpdate)/configTICK_RATE_HZ);
+  lastPNUpdate = osTick;
 
 
 
@@ -442,7 +444,7 @@ void estimatorKalman(state_t *state, sensorData_t *sensors, control_t *control, 
     baroAccumulatorCount++;
   }
 
-  if ((tick-lastBaroUpdate) >= configTICK_RATE_HZ/BARO_RATE // update at BARO_RATE
+  if ((osTick-lastBaroUpdate) >= configTICK_RATE_HZ/BARO_RATE // update at BARO_RATE
       && baroAccumulatorCount > 0)
   {
     baroAccumulator.asl /= baroAccumulatorCount;
@@ -451,7 +453,7 @@ void estimatorKalman(state_t *state, sensorData_t *sensors, control_t *control, 
 
     baroAccumulator.asl = 0;
     baroAccumulatorCount = 0;
-    lastBaroUpdate = tick;
+    lastBaroUpdate = osTick;
     doneUpdate = true;
 #endif
   }
@@ -505,7 +507,7 @@ void estimatorKalman(state_t *state, sensorData_t *sensors, control_t *control, 
 
   if (doneUpdate)
   {
-    stateEstimatorFinalize(sensors, tick);
+    stateEstimatorFinalize(sensors, osTick);
     stateEstimatorAssertNotNaN();
   }
 
@@ -513,7 +515,7 @@ void estimatorKalman(state_t *state, sensorData_t *sensors, control_t *control, 
    * Finally, the internal state is externalized.
    * This is done every round, since the external state includes some sensor data
    */
-  stateEstimatorExternalizeState(state, sensors, tick);
+  stateEstimatorExternalizeState(state, sensors, osTick);
   stateEstimatorAssertNotNaN();
 }
 
@@ -1008,8 +1010,8 @@ static void stateEstimatorUpdateWithFlow(flowMeasurement_t *flow, sensorData_t *
   // ~~~ Camera constants ~~~
   // The angle of aperture is guessed from the raw data register and thankfully look to be symmetric
   float Npix = 30.0;                      // [pixels] (same in x and y)
-  float thetapix = DEG_TO_RAD * 4.0f;    // [rad]    (same in x and y)
-
+  //float thetapix = DEG_TO_RAD * 4.0f;     // [rad]    (same in x and y)
+  float thetapix = DEG_TO_RAD * 4.2f;
   //~~~ Body rates ~~~
   // TODO check if this is feasible or if some filtering has to be done
   omegax_b = sensors->gyro.x * DEG_TO_RAD;
@@ -1023,8 +1025,11 @@ static void stateEstimatorUpdateWithFlow(flowMeasurement_t *flow, sensorData_t *
   //
   // where \hat{} denotes a basis vector, \dot{} denotes a derivative and
   // _G and _B refer to the global/body coordinate systems.
-  // dx_g = R[0][0] * S[STATE_PX] + R[1][0] * S[STATE_PY] + R[2][0] * S[STATE_PZ];
-  // dy_g = R[0][1] * S[STATE_PX] + R[1][1] * S[STATE_PY] + R[2][1] * S[STATE_PZ];
+
+  // Modification 1
+  //dx_g = R[0][0] * S[STATE_PX] + R[0][1] * S[STATE_PY] + R[0][2] * S[STATE_PZ];
+  //dy_g = R[1][0] * S[STATE_PX] + R[1][1] * S[STATE_PY] + R[1][2] * S[STATE_PZ];
+
 
   dx_g = S[STATE_PX];
   dy_g = S[STATE_PY];
@@ -1037,9 +1042,10 @@ static void stateEstimatorUpdateWithFlow(flowMeasurement_t *flow, sensorData_t *
 
   // ~~~ X velocity prediction and update ~~~
   // predics the number of accumulated pixels in the x-direction
+  float omegaFactor = 1.25f;
   float hx[STATE_DIM] = {0};
   arm_matrix_instance_f32 Hx = {1, STATE_DIM, hx};
-  predictedNX = (flow->dt * Npix / thetapix ) * ((dx_g * R[2][2] / z_g) - omegay_b);
+  predictedNX = (flow->dt * Npix / thetapix ) * ((dx_g * R[2][2] / z_g) - omegaFactor * omegay_b);
   measuredNX = flow->dpixelx;
 
   // derive measurement equation with respect to dx (and z?)
@@ -1052,7 +1058,7 @@ static void stateEstimatorUpdateWithFlow(flowMeasurement_t *flow, sensorData_t *
   // ~~~ Y velocity prediction and update ~~~
   float hy[STATE_DIM] = {0};
   arm_matrix_instance_f32 Hy = {1, STATE_DIM, hy};
-  predictedNY = (flow->dt * Npix / thetapix ) * ((dy_g * R[2][2] / z_g) + omegax_b);
+  predictedNY = (flow->dt * Npix / thetapix ) * ((dy_g * R[2][2] / z_g) + omegaFactor * omegax_b);
   measuredNY = flow->dpixely;
 
   // derive measurement equation with respect to dy (and z?)
@@ -1071,6 +1077,11 @@ static void stateEstimatorUpdateWithTof(tofMeasurement_t *tof)
 
   // Only update the filter if the measurement is reliable (\hat{h} -> infty when R[2][2] -> 0)
   if (fabs(R[2][2]) > 0.1 && R[2][2] > 0){
+    float angle = fabsf(acosf(R[2][2])) - DEG_TO_RAD * (15.0f / 2.0f);
+    if (angle < 0.0f) {
+      angle = 0.0f;
+    }
+    //float predictedDistance = S[STATE_Z] / cosf(angle);
     float predictedDistance = S[STATE_Z] / R[2][2];
     float measuredDistance = tof->distance; // [m]
 
@@ -1078,6 +1089,7 @@ static void stateEstimatorUpdateWithTof(tofMeasurement_t *tof)
     //
     // h = z/((R*z_b)\dot z_b) = z/cos(alpha)
     h[STATE_Z] = 1 / R[2][2];
+    //h[STATE_Z] = 1 / cosf(angle);
 
     // Scalar update
     stateEstimatorScalarUpdate(&H, measuredDistance-predictedDistance, tof->stdDev);

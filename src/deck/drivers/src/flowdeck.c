@@ -105,6 +105,7 @@ static void registerWrite(uint8_t reg, uint8_t value)
   // Set MSB to 1 for write
   reg |= 0x80u;
 
+  spiBeginTransaction(SPI_BAUDRATE_2MHZ);
   digitalWrite(NCS_PIN, LOW);
 
   sleepus(50);
@@ -116,6 +117,7 @@ static void registerWrite(uint8_t reg, uint8_t value)
   sleepus(50);
 
   digitalWrite(NCS_PIN, HIGH);
+  spiEndTransaction();
   sleepus(200);
 }
 
@@ -127,6 +129,7 @@ static uint8_t registerRead(uint8_t reg)
   // Set MSB to 0 for read
   reg &= ~0x80u;
 
+  spiBeginTransaction(SPI_BAUDRATE_2MHZ);
   digitalWrite(NCS_PIN, LOW);
 
   sleepus(50);
@@ -138,6 +141,7 @@ static uint8_t registerRead(uint8_t reg)
   sleepus(50);
 
   digitalWrite(NCS_PIN, HIGH);
+  spiEndTransaction();
   sleepus(200);
 
   return data;
@@ -146,6 +150,8 @@ static uint8_t registerRead(uint8_t reg)
 static void readMotion(motionBurst_t * motion)
 {
   uint8_t address = 0x16;
+
+  spiBeginTransaction(SPI_BAUDRATE_2MHZ);
   digitalWrite(NCS_PIN,LOW);
   sleepus(50);
   spiExchange(1, &address, &address);
@@ -153,6 +159,7 @@ static void readMotion(motionBurst_t * motion)
   spiExchange(sizeof(motionBurst_t), (uint8_t*)motion, (uint8_t*)motion);
   sleepus(50);
   digitalWrite(NCS_PIN, HIGH);
+  spiEndTransaction();
   sleepus(50);
 
   uint16_t realShutter = (motion->shutter >> 8) & 0x0FF;
@@ -238,6 +245,10 @@ static void InitRegisters()
   registerWrite(0x4E, 0xA8);
   registerWrite(0x5A, 0x50);
   registerWrite(0x40, 0x80);
+
+  registerWrite(0x7F, 0x00);
+  registerWrite(0x5A, 0x10);
+  registerWrite(0x54, 0x00);
 }
 
 static void pamotionTask(void *param)
@@ -312,8 +323,6 @@ static void pamotionInit()
   digitalWrite(NCS_PIN, HIGH);
 
   spiBegin();
-  spiConfigureSlow();
-
   vTaskDelay(M2T(40));
 
   digitalWrite(NCS_PIN, HIGH);
@@ -368,7 +377,7 @@ static const DeckDriver pamotion_deck = {
   .name = "bcFlow",
 
   .usedGpio = 0,  // FIXME: set the used pins
-  .requiredEstimator = KalmanEstimator,
+  .requiredEstimator = kalmanEstimator,
 
   .init = pamotionInit,
   .test = pamotionTest,
