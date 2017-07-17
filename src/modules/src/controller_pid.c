@@ -17,7 +17,7 @@ static attitude_t attitudeDesired;
 static attitude_t rateDesired;
 static float actuatorThrust;
 
-static float ManualThrust;//set manual thrust on cfclient
+static float ManualThrust=false;//set manual thrust on cfclient. Initially on false so that motors don't run on power up.
 PARAM_GROUP_START(Manual_Thrust)
 PARAM_ADD(PARAM_FLOAT, BaseThrust, &ManualThrust)
 PARAM_GROUP_STOP(Manual_Thrust)
@@ -106,9 +106,23 @@ void stateController(control_t *control, setpoint_t *setpoint,
 	  {
     control->thrust = actuatorThrust;
 	  }
-	  else
+	  else if (actuatorThrust == 0)//my conditions for when no thrust input comes from the joystick
 	  {
-		  control->thrust = ManualThrust;//my condition for when no thrust input comes from the joystick
+		  if (ManualThrust) //If any value other than 'false'
+		  control->thrust = ManualThrust;
+		  else //Deactivate the power to motors.
+		  {
+			  control->thrust = 0;
+			  control->roll = 0;
+			  control->pitch = 0;
+			  control->yaw = 0;
+
+			  attitudeControllerResetAllPID();
+			  positionControllerResetAllPID();
+
+			  // Reset the calculated YAW angle for rate control
+			  attitudeDesired.yaw = state->attitude.yaw;
+		  }
 	  }
 
   }
