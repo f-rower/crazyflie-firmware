@@ -16,7 +16,12 @@ static bool tiltCompensationEnabled = false;
 static attitude_t attitudeDesired;
 static attitude_t rateDesired;
 static float actuatorThrust;
-static float ManualThrust = 0;
+
+static float ManualThrust;//set manual thrust on cfclient
+PARAM_GROUP_START(Manual_Thrust)
+PARAM_ADD(PARAM_FLOAT, BaseThrust, &ManualThrust)
+PARAM_GROUP_STOP(Manual_Thrust)
+
 void stateControllerInit(void)
 {
   attitudeControllerInit(ATTITUDE_UPDATE_DT);
@@ -108,7 +113,7 @@ void stateController(control_t *control, setpoint_t *setpoint,
 
   }
 
-  if (control->thrust == 0)
+ /* if (control->thrust == 0)
   {
     control->thrust = 0;
     control->roll = 0;
@@ -120,7 +125,7 @@ void stateController(control_t *control, setpoint_t *setpoint,
 
     // Reset the calculated YAW angle for rate control
     attitudeDesired.yaw = state->attitude.yaw;
-  }
+  }*/
 }
 
 
@@ -132,9 +137,9 @@ LOG_ADD(LOG_FLOAT, yaw,       &attitudeDesired.yaw)
 LOG_ADD(LOG_FLOAT, rollRate,  &rateDesired.roll)
 LOG_ADD(LOG_FLOAT, pitchRate, &rateDesired.pitch)
 LOG_ADD(LOG_FLOAT, yawRate,   &rateDesired.yaw)
+LOG_ADD(LOG_FLOAT, ManualThrust, &ManualThrust)
 LOG_GROUP_STOP(controller)
 
 PARAM_GROUP_START(controller)
 PARAM_ADD(PARAM_UINT8, tiltComp, &tiltCompensationEnabled)
-PARAM_ADD(PARAM_FLOAT, BaseThrust, &ManualThrust)
 PARAM_GROUP_STOP(controller)
